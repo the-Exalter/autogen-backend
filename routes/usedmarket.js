@@ -3,7 +3,7 @@ const router = express.Router();
 const axios = require('axios');
 const Vehicle = require('../models/Vehicle');
 
-const AI_URL = () => process.env.AI_SERVICE_URL || 'http://localhost:8000';
+const AI_URL = () => (process.env.AI_SERVICE_URL || 'http://localhost:8000').replace(/\/$/, '');
 
 router.post('/', async (req, res) => {
   try {
