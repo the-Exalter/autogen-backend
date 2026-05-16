@@ -299,9 +299,8 @@ try {
       if (eventType === 'delta') {
         res.write(`event: delta\ndata: ${dataStr}\n\n`);
       } else if (eventType === 'done') {
-        try { vehicleData = JSON.parse(dataStr).vehicle; } catch (e) {
-        }
-        res.write(`event: done\ndata: ${dataStr}\n\n`);
+        try { vehicleData = JSON.parse(dataStr).vehicle; } catch (e) {}
+        // Don't forward done yet — save first to get _id
       } else if (eventType === 'error') {
         res.write(`event: error\ndata: ${dataStr}\n\n`);
       }
@@ -312,8 +311,6 @@ try {
     sendEvent('error', { message: streamErr.message });
   }
 }
-
-    res.end();
 
     if (vehicleData) {
       const expiresAt = new Date();
@@ -328,7 +325,7 @@ try {
         engine_capacity: vehicleData.engine_capacity || '',
         transmission: vehicleData.transmission || '',
         features: vehicleData.features || [],
-        price_pkr: vehicleData.typical_price_pkr || null,
+        price_usd: vehicleData.typical_price_usd || null,
         description: vehicleData.description || '',
         known_issues: vehicleData.known_issues || [],
         maintenance_intervals: vehicleData.maintenance_intervals || null,
@@ -337,16 +334,21 @@ try {
         market_position: vehicleData.market_position || '',
       };
 
+      let savedVehicle;
       if (cached) {
-        await Vehicle.findByIdAndUpdate(cached._id, {
-          ...aiData,
-          source: 'ai_generated',
-          search_count: 1,
-          ai_generated_at: new Date(),
-          expires_at: expiresAt,
-        });
+        savedVehicle = await Vehicle.findByIdAndUpdate(
+          cached._id,
+          {
+            ...aiData,
+            source: 'ai_generated',
+            search_count: 1,
+            ai_generated_at: new Date(),
+            expires_at: expiresAt,
+          },
+          { new: true }
+        );
       } else {
-        await Vehicle.create({
+        savedVehicle = await Vehicle.create({
           ...aiData,
           source: 'ai_generated',
           search_count: 1,
@@ -355,7 +357,11 @@ try {
         });
       }
       await SearchLog.create({ query: `${make} ${model} ${year || ''}`, matched: true, ai_triggered: true });
+
+      res.write(`event: done\ndata: ${JSON.stringify({ vehicle: { ...vehicleData, _id: savedVehicle._id } })}\n\n`);
     }
+
+    res.end();
   } catch (err) {
     if (!res.writableEnded) {
       sendEvent('error', { message: err.message });
